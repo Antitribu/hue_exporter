@@ -24,6 +24,10 @@ func generateConfig(outputFile *string) {
 	}
 
 	bridge := bridges[0]
+	if bridge.Port == 443 {
+		bridge.UseHTTPS = true
+		bridge.InsecureSkipVerify = true
+	}
 	var apiKey string
 
 	for {
@@ -38,8 +42,10 @@ func generateConfig(outputFile *string) {
 	println("Successfully created API user.")
 
 	config, err := yaml.Marshal(Config{
-		IPAddr: bridge.IPAddress,
-		APIKey: apiKey,
+		IPAddr:             bridge.IPAddress,
+		APIKey:             apiKey,
+		UseHTTPS:           bridge.Port == 443,
+		InsecureSkipVerify: bridge.Port == 443,
 	})
 
 	if err != nil {

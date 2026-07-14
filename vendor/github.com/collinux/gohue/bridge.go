@@ -13,6 +13,7 @@ package hue
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -29,9 +30,12 @@ import (
 
 // Bridge struct defines hardware that is used to communicate with the lights.
 type Bridge struct {
-	IPAddress string `json:"internalipaddress"`
-	Username  string
-	Info      BridgeInfo
+	IPAddress          string `json:"internalipaddress"`
+	Port               int    `json:"port"`
+	Username           string
+	UseHTTPS           bool
+	InsecureSkipVerify bool
+	Info               BridgeInfo
 }
 
 // BridgeInfo struct is the format for parsing xml from a bridge.
@@ -54,8 +58,8 @@ type BridgeInfo struct {
 
 // Get sends an http GET to the bridge
 func (bridge *Bridge) Get(path string) ([]byte, io.Reader, error) {
-	uri := fmt.Sprintf("http://" + bridge.IPAddress + path)
-	client := &http.Client{Timeout: time.Second * 5}
+	uri := bridge.bridgeURL(path)
+	client := bridge.httpClient()
 	resp, err := client.Get(uri)
 
 	if err != nil {
@@ -68,8 +72,8 @@ func (bridge *Bridge) Get(path string) ([]byte, io.Reader, error) {
 // Put sends an http PUT to the bridge with
 // a body formatted with parameters (in a generic interface)
 func (bridge *Bridge) Put(path string, params interface{}) ([]byte, io.Reader, error) {
-	uri := fmt.Sprintf("http://" + bridge.IPAddress + path)
-	client := &http.Client{Timeout: time.Second * 5}
+	uri := bridge.bridgeURL(path)
+	client := bridge.httpClient()
 
 	data, err := json.Marshal(params)
 	if err != nil {
@@ -102,8 +106,8 @@ func (bridge *Bridge) Post(path string, params interface{}) ([]byte, io.Reader, 
 		request = reqBody
 	}
 	// Send the request and handle the response
-	uri := fmt.Sprintf("http://" + bridge.IPAddress + path)
-	client := &http.Client{Timeout: time.Second * 5}
+	uri := bridge.bridgeURL(path)
+	client := bridge.httpClient()
 	resp, err := client.Post(uri, "text/json", bytes.NewReader(request))
 
 	if err != nil {
@@ -115,8 +119,8 @@ func (bridge *Bridge) Post(path string, params interface{}) ([]byte, io.Reader, 
 
 // Delete sends an http DELETE to the bridge
 func (bridge *Bridge) Delete(path string) error {
-	uri := fmt.Sprintf("http://" + bridge.IPAddress + path)
-	client := &http.Client{Timeout: time.Second * 5}
+	uri := bridge.bridgeURL(path)
+	client := bridge.httpClient()
 	req, _ := http.NewRequest("DELETE", uri, nil)
 	resp, err := client.Do(req)
 
@@ -126,6 +130,27 @@ func (bridge *Bridge) Delete(path string) error {
 	}
 	_, _, err = HandleResponse(resp)
 	return err
+}
+
+func (bridge *Bridge) bridgeURL(path string) string {
+	scheme := "http"
+	if bridge.UseHTTPS || bridge.Port == 443 {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s%s", scheme, bridge.IPAddress, path)
+}
+
+func (bridge *Bridge) httpClient() *http.Client {
+	transport := &http.Transport{}
+	if bridge.UseHTTPS || bridge.Port == 443 {
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: bridge.InsecureSkipVerify,
+		}
+	}
+	return &http.Client{
+		Timeout:   time.Second * 5,
+		Transport: transport,
+	}
 }
 
 // HandleResponse manages the http.Response content from a
@@ -172,8 +197,16 @@ func FindBridges() ([]Bridge, error) {
 // to call `NewBridge` and `Login` or `CreateUser` to access any
 // lights, scenes, groups, etc.
 func NewBridge(ip string) (*Bridge, error) {
+	return NewBridgeWithOptions(ip, false, false)
+}
+
+// NewBridgeWithOptions defines a bridge and optionally uses HTTPS.
+// Set insecureSkipVerify when the bridge presents a self-signed certificate.
+func NewBridgeWithOptions(ip string, useHTTPS, insecureSkipVerify bool) (*Bridge, error) {
 	bridge := Bridge{
-		IPAddress: ip,
+		IPAddress:          ip,
+		UseHTTPS:           useHTTPS,
+		InsecureSkipVerify: insecureSkipVerify,
 	}
 	// Test the connection by attempting to get the bridge info.
 	err := bridge.GetInfo()
@@ -190,7 +223,9 @@ func NewBridge(ip string) (*Bridge, error) {
 func (bridge *Bridge) GetInfo() error {
 	_, reader, err := bridge.Get("/description.xml")
 	if err != nil {
-		return err
+		// Hue Bridge Pro and newer firmware may not expose description.xml.
+		_, _, configErr := bridge.Get("/api/config")
+		return configErr
 	}
 	data := BridgeInfo{}
 	err = xml.NewDecoder(reader).Decode(&data)

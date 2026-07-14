@@ -31,9 +31,11 @@ var (
 )
 
 type Config struct {
-	IPAddr       string `yaml:"ip_address"`
-	APIKey       string `yaml:"api_key"`
-	SensorConfig struct {
+	IPAddr             string `yaml:"ip_address"`
+	APIKey             string `yaml:"api_key"`
+	UseHTTPS           bool   `yaml:"use_https"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	SensorConfig       struct {
 		IgnoreTypes []string `yaml:"ignore_types"`
 		MatchNames  bool     `yaml:"match_names"`
 	} `yaml:"sensors"`
@@ -54,10 +56,10 @@ func readConfig(raw []byte, cfg *Config) {
 	}
 }
 
-func newBridge(ipAddr string) Bridge {
-	bridge, err := hue.NewBridge(ipAddr)
+func newBridge(cfg *Config) Bridge {
+	bridge, err := hue.NewBridgeWithOptions(cfg.IPAddr, cfg.UseHTTPS, cfg.InsecureSkipVerify)
 	if err != nil {
-		log.Fatalf("Error connecting to Hue bridge at %v: %v\n", ipAddr, err)
+		log.Fatalf("Error connecting to Hue bridge at %v: %v\n", cfg.IPAddr, err)
 	}
 	return bridge
 }
@@ -103,7 +105,7 @@ func runServer() {
 		log.Fatalf("Error reading config file: %v\n", err)
 	}
 	readConfig(raw, &cfg)
-	bridge := newBridge(cfg.IPAddr)
+	bridge := newBridge(&cfg)
 	setupPrometheus(bridge, &cfg)
 	listen()
 }

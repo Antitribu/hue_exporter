@@ -1,4 +1,8 @@
 ip_address: 192.168.1.2
+# Required for Hue Bridge Pro and other HTTPS-only bridges.
+use_https: true
+# Bridge Pro uses a self-signed certificate.
+insecure_skip_verify: true
 api_key: "PCZtdsLqGSNaPYUX7SBedriXkud322UZZk3TsJf9"
 sensors:
   # With `match_names` set, the exporter will set the names of temperature

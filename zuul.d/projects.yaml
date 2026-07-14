@@ -1,0 +1,11 @@
+- project:
+    name: Antitribu/hue_exporter
+    check:
+      jobs:
+        - build-docker-hue-exporter
+    gate:
+      jobs:
+        - build-docker-hue-exporter
+    post:
+      jobs:
+        - promote-docker-hue-exporter-latest

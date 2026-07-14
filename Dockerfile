@@ -20,7 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /hue_exporter /bin/hue_exporter
-COPY hue_exporter.example.yml /etc/hue_exporter/config.yml
+COPY --from=build /src/hue_exporter.example.yml /etc/hue_exporter/config.yml
 
 EXPOSE 9366
 ENTRYPOINT ["/bin/hue_exporter"]

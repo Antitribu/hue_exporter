@@ -164,13 +164,17 @@ func HandleResponse(resp *http.Response) ([]byte, io.Reader, error) {
 		return []byte{}, nil, err
 	}
 	reader := bytes.NewReader(body)
-	if strings.Contains(string(body), "\"error\"") {
-		errString := string(body)
-		errNum := errString[strings.Index(errString, "type\":")+6 : strings.Index(errString, ",\"address")]
-		errDesc := errString[strings.Index(errString, "description\":\"")+14 : strings.Index(errString, "\"}}")]
-		errOut := fmt.Sprintf("Error type %s: %s.", errNum, errDesc)
-		err = errors.New(errOut)
-		return []byte{}, nil, err
+	trimmed := strings.TrimSpace(string(body))
+	if strings.HasPrefix(trimmed, "[") {
+		var errs []map[string]map[string]interface{}
+		if json.Unmarshal(body, &errs) == nil && len(errs) > 0 {
+			if hueErr, ok := errs[0]["error"]; ok {
+				errNum := fmt.Sprintf("%v", hueErr["type"])
+				errDesc := fmt.Sprintf("%v", hueErr["description"])
+				errOut := fmt.Sprintf("Error type %s: %s.", errNum, errDesc)
+				return []byte{}, nil, errors.New(errOut)
+			}
+		}
 	}
 	return body, reader, nil
 }
@@ -230,8 +234,9 @@ func (bridge *Bridge) GetInfo() error {
 	data := BridgeInfo{}
 	err = xml.NewDecoder(reader).Decode(&data)
 	if err != nil {
-		err = errors.New("Error: Unable to decode XML response from bridge. ")
-		return err
+		// Hue Bridge Pro returns HTML instead of description.xml.
+		_, _, configErr := bridge.Get("/api/config")
+		return configErr
 	}
 	bridge.Info = data
 	return nil
